@@ -70,7 +70,7 @@ Invalid signals are dropped and produce a diagnostic warning without business at
 
 ### `trace(name, kind, attributes=None, parent=None)`
 
-Starts and returns an `ObservationSpan`. Workflow and agent spans use `SignalKind.INTERNAL`; A2A spans use `CLIENT` or `SERVER`. The optional parent sets the span parent. The A2A stream-event span uses the supplied parent, or the current span, as a Span Link.
+Starts and returns an `ObservationSpan`. Workflow and agent spans use `SignalKind.INTERNAL`; A2A spans use `CLIENT` or `SERVER`. The optional parent sets the span parent. A2A stream-event and stream-error spans use the supplied parent, or the current span, as a Span Link.
 
 ```python
 from openan_observability_sdk import ObservabilitySdk, SignalKind
@@ -89,6 +89,12 @@ Records a metric sample. Values must be finite and non-negative. Counter values 
 ### `log(name, severity, body, attributes=None, *, span=None, context=None)`
 
 Emits a structured log. A log can be associated with an `ObservationSpan` or an OpenTelemetry `Context`; when neither is supplied, the current context is used. Severity values are `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, and `FATAL`.
+
+### `log_record(severity, body, attributes=None, *, event_name=None, timestamp=None, exception=None, context=None)`
+
+Emits a general OpenTelemetry log without a configured signal schema. `timestamp` is an integer number of nanoseconds since the Unix epoch. Attributes may contain strings, booleans, finite numbers, or string arrays. String values and exception details are sanitized before export.
+
+A2A trace names use JSON-RPC method names such as `SendMessage`, `SendStreamingMessage`, `GetTask`, `CancelTask`, `ListTasks`, and push-notification configuration methods. `GetExtendedAgentCard` and `SendPushNotification` are client-only; `SendStreamingMessage-negotiation` is server-only. Stream events may include task status and artifact attributes, and message spans may include transport, protocol version, model, and token usage.
 
 ## `ObservationSpan`
 
@@ -110,12 +116,12 @@ Use `inject(carrier)` and `extract_to_current(carrier)` to carry W3C Trace Conte
 
 ```python
 headers: dict[str, str] = {}
-with observe.trace("message/send", SignalKind.CLIENT, {"operation.name": "message/send"}) as client:
+with observe.trace("SendMessage", SignalKind.CLIENT, {"operation.name": "SendMessage"}) as client:
     with client.make_current():
         TraceContextPropagation.inject(headers)
 
 with TraceContextPropagation.extract_to_current(headers):
-    with observe.trace("message/send", SignalKind.SERVER, {"operation.name": "message/send"}) as server:
+    with observe.trace("SendMessage", SignalKind.SERVER, {"operation.name": "SendMessage"}) as server:
         server.ok()
 ```
 
@@ -125,7 +131,7 @@ The complete names, attributes, types, and metric dimensions are defined in the 
 
 | Category | Traces | Metrics | Logs |
 |---|---|---|---|
-| A2A / A2A-T | `message/send`, `message/stream`, stream events/errors, `tasks/*` | A2A operation and stream metrics; eight A2A-T metrics | `gen_ai.agent.a2at.message` |
+| A2A / A2A-T | `SendMessage`, `SendStreamingMessage`, stream events/errors/negotiations, `GetTask`, `CancelTask`, `ListTasks`, push-notification methods | A2A operation and stream metrics; eight A2A-T metrics | `gen_ai.agent.a2at.message` |
 | Workflow | Workflow and step spans | Workflow duration/count and step duration | Workflow and step events |
 | Agent | Agent substep spans | Substep duration and token usage | Agent lifecycle and substep events |
 

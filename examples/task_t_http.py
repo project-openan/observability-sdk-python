@@ -1,3 +1,20 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+#    Licensed under the Apache License, Version 2.0 (the License); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an AS IS BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 from urllib.request import Request, urlopen
@@ -12,7 +29,7 @@ def attributes(run_id: str) -> dict[str, str]:
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         with TraceContextPropagation.extract_to_current(self.headers):
-            with observe.trace("message/send", SignalKind.SERVER, attributes(run_id)) as span:
+            with observe.trace("SendMessage", SignalKind.SERVER, attributes(run_id)) as span:
                 self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 observe.metric("task.count", 1, {"task.type": "diagnosis"})
                 observe.log(
@@ -36,7 +53,7 @@ with ObservabilitySdk.start(config) as sdk:
     thread = Thread(target=server.handle_request, daemon=True)
     thread.start()
 
-    with observe.trace("message/send", SignalKind.CLIENT, attributes(run_id)) as span:
+    with observe.trace("SendMessage", SignalKind.CLIENT, attributes(run_id)) as span:
         with span.make_current():
             headers: dict[str, str] = {}
             TraceContextPropagation.inject(headers)

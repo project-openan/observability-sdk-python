@@ -48,7 +48,7 @@ with ObservabilitySdk.start(config) as sdk:
     observe = sdk.observe()
     task = {"extension.name": "task-t", "task.type": "diagnosis"}
 
-    with observe.trace("message/send", SignalKind.CLIENT, task) as span:
+    with observe.trace("SendMessage", SignalKind.CLIENT, task) as span:
         with span.make_current():
             observe.log(
                 "gen_ai.agent.a2at.message",
@@ -122,12 +122,12 @@ with ObservabilitySdk.start() as sdk:
     observe = sdk.observe()
     headers: dict[str, str] = {}
 
-    with observe.trace("message/send", SignalKind.CLIENT, {"operation.name": "message/send"}) as span:
+    with observe.trace("SendMessage", SignalKind.CLIENT, {"operation.name": "SendMessage"}) as span:
         with span.make_current():
             TraceContextPropagation.inject(headers)
 
     with TraceContextPropagation.extract_to_current(headers):
-        with observe.trace("message/send", SignalKind.SERVER, {"operation.name": "message/send"}) as server:
+        with observe.trace("SendMessage", SignalKind.SERVER, {"operation.name": "SendMessage"}) as server:
             server.ok()
 ```
 

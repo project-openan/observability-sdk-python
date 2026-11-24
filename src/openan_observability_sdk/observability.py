@@ -1,3 +1,20 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+#    Licensed under the Apache License, Version 2.0 (the License); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an AS IS BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +29,7 @@ from opentelemetry.context import Context, get_current
 from opentelemetry.metrics import Meter
 from opentelemetry.trace import Link, SpanKind as OtelSpanKind, Tracer, get_current_span, set_span_in_context
 
-from openan_observability_sdk._attributes import clean, select_extension, validate_attributes
+from openan_observability_sdk._attributes import clean, convert_general_log_attributes, select_extension, validate_attributes
 from openan_observability_sdk.definitions import MetricDefinition, SignalCatalog, SignalDefinition
 from openan_observability_sdk.enums import LogSeverity, SignalKind
 from openan_observability_sdk.span import ObservationSpan
@@ -71,14 +88,22 @@ class Observability:
             attrs = {} if attributes is None else attributes
             a2a = self._catalog.a2a
             is_a2a = name in a2a.trace_names
-            is_stream_event = name == a2a.stream_event
+            is_stream_event = name in {a2a.stream_event, a2a.stream_error}
             if is_a2a:
                 if span_kind not in {OtelSpanKind.CLIENT, OtelSpanKind.SERVER}:
                     raise ValueError("A2A spans require CLIENT or SERVER kind")
                 if name in a2a.client_only_traces and span_kind != OtelSpanKind.CLIENT:
                     raise ValueError("A2A trace is client-only")
+                if name in a2a.server_only_traces and span_kind != OtelSpanKind.SERVER:
+                    raise ValueError("A2A trace is server-only")
                 extension = select_extension(attrs, self._catalog.spans, self._catalog)
-                if extension is not None:
+                if name == a2a.stream_negotiation:
+                    definition = SignalDefinition(
+                        extension=a2a.stream_negotiation_span.extension,
+                        allowed=a2a.span.allowed | a2a.stream_negotiation_span.allowed,
+                        required=a2a.stream_negotiation_span.required,
+                    )
+                elif extension is not None:
                     if name not in {a2a.message, a2a.stream}:
                         raise ValueError("A2A extension attributes are only supported on message traces")
                     definition = SignalDefinition(
@@ -87,7 +112,7 @@ class Observability:
                         required=extension.required,
                     )
                 else:
-                    definition = a2a.stream_event_span if is_stream_event else a2a.span
+                    definition = a2a.stream_event_span if name == a2a.stream_event else a2a.span
             else:
                 if span_kind != OtelSpanKind.INTERNAL:
                     raise ValueError("Workflow and agent spans require INTERNAL kind")
@@ -152,7 +177,7 @@ class Observability:
             if not definition.required.issubset(supplied):
                 raise ValueError("required metric dimension is missing")
             if definition.a2a:
-                converted["gen_ai.system"] = "A2A"
+                converted["gen_ai.system"] = "a2a"
             if definition.histogram:
                 self._histograms[definition.name].record(numeric_value, attributes=converted)
             else:
@@ -200,6 +225,48 @@ class Observability:
             )
         except (KeyError, TypeError, ValueError):
             _DIAGNOSTICS.warning("Observation log rejected")
+
+    def log_record(
+        self,
+        severity: LogSeverity | str,
+        body: str,
+        attributes: Mapping[str, Any] | None = None,
+        *,
+        event_name: str | None = None,
+        timestamp: int | None = None,
+        exception: BaseException | None = None,
+        context: Context | None = None,
+    ) -> None:
+        """Emit a general OpenTelemetry log record without a structured A2A-T schema."""
+
+        if not self._enabled.is_set():
+            return
+        try:
+            if not isinstance(body, str):
+                raise ValueError("log body is required")
+            if event_name is not None and not isinstance(event_name, str):
+                raise ValueError("event name must be a string")
+            if timestamp is not None and (not isinstance(timestamp, int) or isinstance(timestamp, bool) or timestamp < 0):
+                raise ValueError("timestamp must be non-negative nanoseconds")
+            if exception is not None and not isinstance(exception, BaseException):
+                raise ValueError("exception must be an exception")
+            normalized_severity = severity if isinstance(severity, LogSeverity) else LogSeverity(str(severity).upper())
+            converted = convert_general_log_attributes(attributes)
+            if exception is not None:
+                exception_type = f"{type(exception).__module__}.{type(exception).__qualname__}"
+                converted["exception.type"] = exception_type
+                converted["exception.message"] = clean(f"{type(exception).__name__}: {exception}")
+            self._logger.emit(
+                event_name=clean(event_name) if event_name is not None and event_name.strip() else None,
+                timestamp=timestamp,
+                context=context if context is not None else get_current(),
+                severity_number=_SEVERITY_NUMBERS[normalized_severity],
+                severity_text=normalized_severity.value,
+                body=clean(body),
+                attributes=converted,
+            )
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError, OverflowError):
+            _DIAGNOSTICS.warning("Observation general log rejected")
 
     def _metric_definition(self, metric_id: str) -> MetricDefinition | None:
         short = metric_id

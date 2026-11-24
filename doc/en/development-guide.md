@@ -54,6 +54,8 @@ Call `set_enabled(False)` to stop creating new SDK signals at runtime. Spans cre
 
 A2A request spans use `CLIENT` or `SERVER`. A2A-T message spans and message logs require `extension.name`, which selects the extension attributes:
 
+A2A trace names follow the Java SDK's JSON-RPC method names, including `SendMessage`, `SendStreamingMessage`, and `GetTask`. `GetExtendedAgentCard` and `SendPushNotification` are client-only; `SendStreamingMessage-negotiation` is server-only. Stream-event and stream-error spans retain the supplied parent, or the current span, as a Span Link.
+
 | `extension.name` | Example attributes |
 |---|---|
 | `task-t` | `task.type`, `task.object` |

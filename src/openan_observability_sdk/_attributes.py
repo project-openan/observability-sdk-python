@@ -1,5 +1,23 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+#    Licensed under the Apache License, Version 2.0 (the License); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an AS IS BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -120,6 +138,10 @@ def validate_attributes(
 
 
 def _convert_value(key: str, value: Any, definition: AttributeDefinition) -> Any:
+    if definition.value_type == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError("attribute must be a boolean")
+        return value
     if definition.value_type == "integer":
         if not isinstance(value, int) or isinstance(value, bool) or value < -(2**63) or value > 2**63 - 1:
             raise ValueError("attribute must be a signed 64-bit integer")
@@ -139,8 +161,37 @@ def _convert_value(key: str, value: Any, definition: AttributeDefinition) -> Any
         result = value.lower()
         if result not in definition.values:
             raise ValueError("attribute has an unsupported value")
-    if key == "gen_ai.system" and result != "A2A":
-        raise ValueError("gen_ai.system must be A2A")
+    if key == "gen_ai.system" and result != "a2a":
+        raise ValueError("gen_ai.system must be a2a")
     if key == "operation.name" and not result.strip():
         raise ValueError("operation.name must not be blank")
     return clean(result)
+
+
+def convert_general_log_attributes(attributes: Mapping[str, Any] | None) -> dict[str, Any]:
+    if attributes is None:
+        return {}
+    if not isinstance(attributes, Mapping):
+        raise ValueError("attributes must be a mapping")
+
+    converted: dict[str, Any] = {}
+    for key, value in attributes.items():
+        if not isinstance(key, str) or not key.strip() or value is None:
+            raise ValueError("invalid general log attribute")
+        if isinstance(value, str):
+            converted[key] = clean(value)
+        elif isinstance(value, bool):
+            converted[key] = value
+        elif isinstance(value, int):
+            if value < -(2**63) or value > 2**63 - 1:
+                raise ValueError("integer log attributes must fit signed 64-bit range")
+            converted[key] = value
+        elif isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError("floating-point log attributes must be finite")
+            converted[key] = value
+        elif isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+            converted[key] = [clean(item) for item in value]
+        else:
+            raise ValueError("unsupported general log attribute type")
+    return converted

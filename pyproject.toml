@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openan-observability-sdk"
-version = "0.1.0.dev0"
+version = "1.0.0"
 description = "OpenAN observability SDK for A2A-T, workflow, and agent signals"
 readme = "README.md"
 requires-python = ">=3.10"

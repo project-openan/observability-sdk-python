@@ -1,3 +1,20 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+#    Licensed under the Apache License, Version 2.0 (the License); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an AS IS BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -57,10 +74,13 @@ class A2aProtocolDefinition:
     stream: str
     stream_event: str
     stream_error: str
+    stream_negotiation: str
     trace_names: frozenset[str]
     client_only_traces: frozenset[str]
+    server_only_traces: frozenset[str]
     span: SignalDefinition
     stream_event_span: SignalDefinition
+    stream_negotiation_span: SignalDefinition
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +128,7 @@ def load_catalog() -> SignalCatalog:
         for key, raw in _mapping(root.get("attributes", {}), f"{filename}.attributes").items():
             item = _mapping(raw, f"{filename}.attributes.{key}")
             value_type = _string(item.get("type"), f"{filename}.attributes.{key}.type").lower()
-            if value_type not in {"string", "integer", "string_array"}:
+            if value_type not in {"string", "integer", "boolean", "string_array"}:
                 raise RuntimeError(f"Unsupported attribute type at {filename}.attributes.{key}.type")
             values = frozenset(_strings(item.get("values", []), f"{filename}.attributes.{key}.values"))
             if values and key != "extension.name":
@@ -179,12 +199,21 @@ def load_catalog() -> SignalCatalog:
             stream = _string(special.get("stream"), f"{filename}.a2a.special_traces.stream")
             stream_event = _string(special.get("stream_event"), f"{filename}.a2a.special_traces.stream_event")
             stream_error = _string(special.get("stream_error"), f"{filename}.a2a.special_traces.stream_error")
+            stream_negotiation = _string(
+                special.get("stream_negotiation"), f"{filename}.a2a.special_traces.stream_negotiation"
+            )
             trace_names = frozenset(_strings(protocol.get("trace_names"), f"{filename}.a2a.trace_names"))
             client_only = frozenset(
                 _strings(protocol.get("client_only_traces"), f"{filename}.a2a.client_only_traces")
             )
-            if not {message, stream, stream_event, stream_error}.issubset(trace_names) or not client_only.issubset(
-                trace_names
+            server_only = frozenset(
+                _strings(protocol.get("server_only_traces", []), f"{filename}.a2a.server_only_traces")
+            )
+            if (
+                not {message, stream, stream_event, stream_error, stream_negotiation}.issubset(trace_names)
+                or not client_only.issubset(trace_names)
+                or not server_only.issubset(trace_names)
+                or client_only.intersection(server_only)
             ):
                 raise RuntimeError(f"A2A special traces must be listed at {filename}.a2a")
             a2a = A2aProtocolDefinition(
@@ -193,11 +222,18 @@ def load_catalog() -> SignalCatalog:
                 stream=stream,
                 stream_event=stream_event,
                 stream_error=stream_error,
+                stream_negotiation=stream_negotiation,
                 trace_names=trace_names,
                 client_only_traces=client_only,
+                server_only_traces=server_only,
                 span=_signal(protocol.get("span_attributes"), f"{filename}.a2a.span_attributes"),
                 stream_event_span=_signal(
                     protocol.get("stream_event_attributes"), f"{filename}.a2a.stream_event_attributes"
+                ),
+                stream_negotiation_span=_signal(
+                    protocol.get("stream_negotiation_attributes"),
+                    f"{filename}.a2a.stream_negotiation_attributes",
+                    "negotiation-t",
                 ),
             )
 

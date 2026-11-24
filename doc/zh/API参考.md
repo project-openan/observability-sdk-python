@@ -70,7 +70,7 @@ HTTP/protobuf 请填写 Collector 基础 URL；SDK 会补上 `/v1/traces`、`/v1
 
 ### `trace(name, kind, attributes=None, parent=None)`
 
-启动并返回 `ObservationSpan`。Workflow 和 Agent Span 使用 `SignalKind.INTERNAL`；A2A Span 使用 `CLIENT` 或 `SERVER`。可选的 parent 用于设置 Span 父级。A2A stream-event Span 会将传入的 parent 或当前 Span 作为 Span Link。
+启动并返回 `ObservationSpan`。Workflow 和 Agent Span 使用 `SignalKind.INTERNAL`；A2A Span 使用 `CLIENT` 或 `SERVER`。可选的 parent 用于设置 Span 父级。A2A stream-event 和 stream-error Span 会将传入的 parent 或当前 Span 作为 Span Link。
 
 ```python
 from openan_observability_sdk import ObservabilitySdk, SignalKind
@@ -89,6 +89,12 @@ with ObservabilitySdk.start() as sdk:
 ### `log(name, severity, body, attributes=None, *, span=None, context=None)`
 
 记录结构化 Log。可将 Log 关联到 `ObservationSpan` 或 OpenTelemetry `Context`；两者都未传入时使用当前上下文。严重级别为 `TRACE`、`DEBUG`、`INFO`、`WARN`、`ERROR` 和 `FATAL`。
+
+### `log_record(severity, body, attributes=None, *, event_name=None, timestamp=None, exception=None, context=None)`
+
+记录不使用预定义信号 Schema 的通用 OpenTelemetry Log。`timestamp` 是从 Unix epoch 起算的纳秒整数。属性支持字符串、布尔值、有限数值和字符串数组；导出前会清理字符串和异常信息。
+
+A2A Trace 名称使用 JSON-RPC 方法名，例如 `SendMessage`、`SendStreamingMessage`、`GetTask`、`CancelTask`、`ListTasks` 和推送通知配置方法。`GetExtendedAgentCard` 与 `SendPushNotification` 仅支持 Client；`SendStreamingMessage-negotiation` 仅支持 Server。流事件可记录任务状态和 Artifact 属性，消息 Span 可记录传输方式、协议版本、模型及 Token 用量。
 
 ## `ObservationSpan`
 
@@ -110,12 +116,12 @@ with ObservabilitySdk.start() as sdk:
 
 ```python
 headers: dict[str, str] = {}
-with observe.trace("message/send", SignalKind.CLIENT, {"operation.name": "message/send"}) as client:
+with observe.trace("SendMessage", SignalKind.CLIENT, {"operation.name": "SendMessage"}) as client:
     with client.make_current():
         TraceContextPropagation.inject(headers)
 
 with TraceContextPropagation.extract_to_current(headers):
-    with observe.trace("message/send", SignalKind.SERVER, {"operation.name": "message/send"}) as server:
+    with observe.trace("SendMessage", SignalKind.SERVER, {"operation.name": "SendMessage"}) as server:
         server.ok()
 ```
 
@@ -125,7 +131,7 @@ with TraceContextPropagation.extract_to_current(headers):
 
 | 类别 | Traces | Metrics | Logs |
 |---|---|---|---|
-| A2A / A2A-T | `message/send`、`message/stream`、流事件/错误、`tasks/*` | A2A 操作与流式指标；八项 A2A-T 指标 | `gen_ai.agent.a2at.message` |
+| A2A / A2A-T | `SendMessage`、`SendStreamingMessage`、流事件/错误/协商、`GetTask`、`CancelTask`、`ListTasks`、推送通知方法 | A2A 操作与流式指标；八项 A2A-T 指标 | `gen_ai.agent.a2at.message` |
 | Workflow | Workflow 和 Step Span | Workflow 时长/计数和 Step 时长 | Workflow 和 Step 事件 |
 | Agent | Agent Substep Span | Substep 时长和 Token 用量 | Agent 生命周期和 Substep 事件 |
 
